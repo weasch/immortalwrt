@@ -1,7 +1,7 @@
 name: Build ImmortalWrt for AX6S
 
 on:
-  workflow_dispatch: # 允许你手动点击按钮触发编译
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,10 +15,8 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/libexec/docker/cli-plugins/docker-buildx
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync sstream swig time u-boot-tools libtool-bin xz-utils zlib1g-dev libinih-dev
-        sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
 
     - name: Update & Install Feeds
@@ -33,7 +31,7 @@ jobs:
         CONFIG_TARGET_mediatek_mt7622=y
         CONFIG_TARGET_mediatek_mt7622_DEVICE_xiaomi_redmi-router-ax6s=y
 
-        # 开启底层 BTF 视神经（Daed 满血核心驱动）
+        # 开启底层 BTF 视神经
         CONFIG_DEVEL=y
         CONFIG_KERNEL_BPF_EVENTS=y
         CONFIG_KERNEL_CGROUP_BPF=y
@@ -44,8 +42,6 @@ jobs:
         CONFIG_PACKAGE_daed=y
         CONFIG_PACKAGE_luci-app-daed=y
         EOF
-        
-        # 补全默认配置
         make defconfig
 
     - name: Download package

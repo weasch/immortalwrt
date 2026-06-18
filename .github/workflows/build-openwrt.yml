@@ -14,29 +14,26 @@ jobs:
     - name: Install ImageBuilder Dependencies
       run: |
         sudo apt-get -qq update
-        # 安装构建器所需的轻量依赖
         sudo apt-get -qq install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip qemu-utils
 
     - name: Download and Extract ImageBuilder
       run: |
-        # 直接拉取 ImmortalWrt 官方最新 Snapshot 的 MT7622 极速构建环境
+        # 拉取 ImmortalWrt 官方今天最新的 MT7622 极速构建环境
         wget https://downloads.immortalwrt.org/snapshots/targets/mediatek/mt7622/immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.xz
         tar -Jxf immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.xz
 
     - name: Build Firmware with Daed and LuCI
       run: |
-        # 进入解压后的构建器目录
         cd immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64
         
-        # 写入你需要的所有插件，ImageBuilder 会自动解决所有深层 kmod 依赖！
+        # 强制塞入所有网页组件和底层网络驱动，构建器会自动补全所有内核依赖！
         PACKAGES="luci luci-i18n-base-zh-cn luci-app-daed luci-i18n-daed-zh-cn kmod-veth kmod-xdp-sockets-diag"
         
-        # 启动极速构建（指定红米 AX6S 配置文件）
+        # 极速打包红米 AX6S 固件
         make image PROFILE=xiaomi_redmi-router-ax6s PACKAGES="$PACKAGES"
 
     - name: Upload Firmware to Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_AX6S_Daed_ImageBuilder
-        # 提取最终生成的 sysupgrade 升级包
         path: immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64/bin/targets/mediatek/mt7622/*-sysupgrade.itb

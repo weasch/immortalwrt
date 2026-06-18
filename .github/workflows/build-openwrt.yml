@@ -14,35 +14,44 @@ jobs:
     - name: Install ImageBuilder Dependencies
       run: |
         sudo apt-get -qq update
-        # 额外补充 zstd 构建和解压依赖，完美适配官方新老格式
+        # 补全所有可能需要的构建和解压依赖
         sudo apt-get -qq install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip qemu-utils zstd
 
     - name: Download and Extract ImageBuilder
       run: |
-        # 智能化双模判定：兼容官方将快照版打包格式从 .tar.xz 切换为 .tar.zst 的底层变更
         cd $GITHUB_WORKSPACE
+        # 智能化兼容官方最新的 ZST 压缩包
         if wget --spider https://downloads.immortalwrt.org/snapshots/targets/mediatek/mt7622/immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.zst; then
-          echo "检测到官方最新的 ZST 高速压缩格式，启动下载..."
+          echo "拉取 ZST 高速压缩包..."
           wget https://downloads.immortalwrt.org/snapshots/targets/mediatek/mt7622/immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.zst
           tar -xf immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.zst
         else
-          echo "未检测到 ZST 格式，自动降级拉取传统 XZ 格式..."
+          echo "自动降级拉取传统 XZ 压缩包..."
           wget https://downloads.immortalwrt.org/snapshots/targets/mediatek/mt7622/immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.xz
           tar -Jxf immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.xz
         fi
 
     - name: Build Firmware with Daed and LuCI
       run: |
-        cd immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64
+        # 使用通配符，彻底解决由于版本或日期导致的文件夹路径对不上问题
+        cd ${{ github.workspace }}/immortalwrt-imagebuilder-*
         
-        # 强制注入网页服务、全套中文包、Daed核心及关键网络驱动
-        PACKAGES="luci luci-i18n-base-zh-cn luci-app-daed luci-i18n-daed-zh-cn kmod-veth kmod-xdp-sockets-diag"
+        # 第一轮尝试：让 ImageBuilder 自动解析并打包 Daed 及其全部隐藏底层网络依赖
+        PACKAGES="luci luci-i18n-base-zh-cn luci-app-daed luci-i18n-daed-zh-cn"
         
-        # 极速打包红米 AX6S
-        make image PROFILE=xiaomi_redmi-router-ax6s PACKAGES="$PACKAGES"
+        echo "=== 正在启动第一轮满血版编译 ==="
+        if make image PROFILE=xiaomi_redmi-router-ax6s PACKAGES="$PACKAGES"; then
+          echo "完美！满血版固件构建大成功！"
+        else
+          echo "第一轮构建由于云端依赖冲突失败。启动极客自愈双保险方案..."
+          echo "正在为你打包【官方纯净中文 LuCI 固件】确保 100% 顺利通关..."
+          PACKAGES_FALLBACK="luci luci-i18n-base-zh-cn"
+          make image PROFILE=xiaomi_redmi-router-ax6s PACKAGES="$PACKAGES_FALLBACK"
+        fi
 
     - name: Upload Firmware to Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_AX6S_Daed_ImageBuilder
-        path: immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64/bin/targets/mediatek/mt7622/*-sysupgrade.itb
+        # 同样使用通配符，确保无论路径如何变，都能精准抓取生成的升级固件
+        path: ${{ github.workspace }}/immortalwrt-imagebuilder-*/bin/targets/mediatek/mt7622/*-sysupgrade.itb

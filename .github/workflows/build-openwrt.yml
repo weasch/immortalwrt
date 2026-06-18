@@ -16,7 +16,7 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get -qq update
-        # 直接使用 ImmortalWrt 官方的环境自适应脚本，告别手动装包冲突！
+        # 极客专属：调用 ImmortalWrt 官方环境初始化脚本，告别玄学报错
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
     - name: Update & Install Feeds
@@ -27,20 +27,30 @@ jobs:
     - name: Generate Configuration File
       run: |
         cat <<EOF > .config
+        # 锁定机型：红米 AX6S (MT7622)
         CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_mt7622=y
         CONFIG_TARGET_mediatek_mt7622_DEVICE_xiaomi_redmi-router-ax6s=y
 
-        # 开启底层 BTF 视神经
+        # 开启底层 BTF 视神经 (Daed 满血前置条件)
         CONFIG_DEVEL=y
         CONFIG_KERNEL_BPF_EVENTS=y
         CONFIG_KERNEL_CGROUP_BPF=y
         CONFIG_BPF_SYSCALL=y
         CONFIG_DEBUG_INFO_BTF=y
 
-        # 编译打包入 Daed
+        # 打包 Daed 及网页控制面板
         CONFIG_PACKAGE_daed=y
         CONFIG_PACKAGE_luci-app-daed=y
+        CONFIG_PACKAGE_luci-i18n-daed-zh-cn=y
+
+        # 【关键修复】强行将缺失的底层网络内核驱动打入底包！
+        CONFIG_PACKAGE_kmod-veth=y
+        CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+
+        # 顺手把基础的 LuCI 面板和中文也打进去，免得再敲命令
+        CONFIG_PACKAGE_luci=y
+        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
         EOF
         make defconfig
 
@@ -59,5 +69,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_AX6S_Daed
-        # 直接把整个 mt7622 目录打包，确保不会遗漏任何固件文件
         path: bin/targets/mediatek/mt7622/*

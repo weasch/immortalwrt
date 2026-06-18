@@ -1,4 +1,4 @@
-name: Build ImmortalWrt for AX6S
+name: Build AX6S via ImageBuilder
 
 on:
   workflow_dispatch:
@@ -11,62 +11,32 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Install ImageBuilder Dependencies
       run: |
         sudo apt-get -qq update
-        # 极客专属：调用 ImmortalWrt 官方环境初始化脚本，告别玄学报错
-        sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+        # 安装构建器所需的轻量依赖
+        sudo apt-get -qq install -y build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip qemu-utils
 
-    - name: Update & Install Feeds
+    - name: Download and Extract ImageBuilder
       run: |
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        # 直接拉取 ImmortalWrt 官方最新 Snapshot 的 MT7622 极速构建环境
+        wget https://downloads.immortalwrt.org/snapshots/targets/mediatek/mt7622/immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.xz
+        tar -Jxf immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64.tar.xz
 
-    - name: Generate Configuration File
+    - name: Build Firmware with Daed and LuCI
       run: |
-        cat <<EOF > .config
-        # 锁定机型：红米 AX6S (MT7622)
-        CONFIG_TARGET_mediatek=y
-        CONFIG_TARGET_mediatek_mt7622=y
-        CONFIG_TARGET_mediatek_mt7622_DEVICE_xiaomi_redmi-router-ax6s=y
+        # 进入解压后的构建器目录
+        cd immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64
+        
+        # 写入你需要的所有插件，ImageBuilder 会自动解决所有深层 kmod 依赖！
+        PACKAGES="luci luci-i18n-base-zh-cn luci-app-daed luci-i18n-daed-zh-cn kmod-veth kmod-xdp-sockets-diag"
+        
+        # 启动极速构建（指定红米 AX6S 配置文件）
+        make image PROFILE=xiaomi_redmi-router-ax6s PACKAGES="$PACKAGES"
 
-        # 开启底层 BTF 视神经 (Daed 满血前置条件)
-        CONFIG_DEVEL=y
-        CONFIG_KERNEL_BPF_EVENTS=y
-        CONFIG_KERNEL_CGROUP_BPF=y
-        CONFIG_BPF_SYSCALL=y
-        CONFIG_DEBUG_INFO_BTF=y
-
-        # 打包 Daed 及网页控制面板
-        CONFIG_PACKAGE_daed=y
-        CONFIG_PACKAGE_luci-app-daed=y
-        CONFIG_PACKAGE_luci-i18n-daed-zh-cn=y
-
-        # 【关键修复】强行将缺失的底层网络内核驱动打入底包！
-        CONFIG_PACKAGE_kmod-veth=y
-        CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
-
-        # 顺手把基础的 LuCI 面板和中文也打进去，免得再敲命令
-        CONFIG_PACKAGE_luci=y
-        CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-        EOF
-        make defconfig
-
-    - name: Download package
-      run: |
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-
-    - name: Compile the firmware
-      run: |
-        echo -e "$(nproc) thread compile"
-        make -j$(nproc) || make -j1 || make -j1 V=s
-
-    - name: Upload firmware to Artifacts
+    - name: Upload Firmware to Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ImmortalWrt_AX6S_Daed
-        path: bin/targets/mediatek/mt7622/*
+        name: ImmortalWrt_AX6S_Daed_ImageBuilder
+        # 提取最终生成的 sysupgrade 升级包
+        path: immortalwrt-imagebuilder-mediatek-mt7622.Linux-x86_64/bin/targets/mediatek/mt7622/*-sysupgrade.itb

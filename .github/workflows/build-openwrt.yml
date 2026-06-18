@@ -16,38 +16,94 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get -qq update
-        # 完美的官方环境部署
+        # 【硬核补丁】安装主机内核编译基础大件（包含 dwarves 里的 pahole 用于生成 BTF 视神经）
+        sudo apt-get install -y dwarves clang llvm libelf-dev build-essential gawk rsync unzip
+        # 调用官方环境自适应部署脚本
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+
+    - name: Setup Modern Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Install pnpm v9
+      run: |
+        # 强行锁定 pnpm v9，完美避开最新社区 v10 环境下前端 lockfile 锁版本冲突闪退的 Bug
+        sudo npm install -g pnpm@9
+
+    - name: Clone and Flatten Custom Daed Package
+      run: |
+        # 【核心归位】强行拉取邱师傅正宗源码，并进行“扁平化”平铺，彻底解决目录深度扫描失败的问题
+        git clone https://github.com/QiuSimons/luci-app-daed /tmp/daed-repo
+        mv /tmp/daed-repo/daed package/
+        mv /tmp/daed-repo/luci-app-daed package/
 
     - name: Update & Install Feeds
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
+    - name: Deep Inject Kernel Options for eBPF/BTF/XDP
+      run: |
+        # 【全盘封死】改用 find 命令进行全路径扫描，绝不遗漏 generic 和 mediatek/mt7622 下的任何一个 config 模版
+        echo "=== 开始深度向内核模版注入核心底层参数 ==="
+        find target/linux/generic/ target/linux/mediatek/ -name "config-*" -o -name "config-default" | while read -r file; do
+          if [ -f "$file" ]; then
+            echo -e "\nCONFIG_DEBUG_INFO=y\nCONFIG_DEBUG_INFO_REDUCED=n\nCONFIG_DEBUG_INFO_BTF=y\nCONFIG_BPF_SYSCALL=y\nCONFIG_BPF_JIT=y\nCONFIG_CGROUP_BPF=y\nCONFIG_XDP_SOCKETS=y\nCONFIG_XDP_SOCKETS_DIAG=m" >> "$file"
+          fi
+        done
+
     - name: Generate Configuration File
       run: |
         cat <<EOF > .config
+        # 锁定红米 AX6S 机型
         CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_mt7622=y
         CONFIG_TARGET_mediatek_mt7622_DEVICE_xiaomi_redmi-router-ax6s=y
 
-        # 【核心】在源码底层基因中死死烙印 eBPF / BTF 视神经驱动
+        # 解锁顶层高级内核控制权限与组件控制链
         CONFIG_DEVEL=y
-        CONFIG_KERNEL_BPF_EVENTS=y
+        CONFIG_ADVANCED_OPTIONS=y
+        CONFIG_KERNEL_DEBUG_INFO=y
+        CONFIG_KERNEL_DEBUG_INFO_REDUCED=n
+        CONFIG_KERNEL_DEBUG_INFO_BTF=y
+        CONFIG_KERNEL_CGROUPS=y
         CONFIG_KERNEL_CGROUP_BPF=y
-        CONFIG_BPF_SYSCALL=y
-        CONFIG_DEBUG_INFO_BTF=y
+        CONFIG_KERNEL_BPF_EVENTS=y
+        CONFIG_BPF_TOOLCHAIN_HOST=y
+        CONFIG_KERNEL_XDP_SOCKETS=y
 
-        # 从零编译 Daed 全家桶
+        # 强选底层网络核心驱动
+        CONFIG_PACKAGE_kmod-bpf=y
+        CONFIG_PACKAGE_kmod-veth=y
+        CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+
+        # 强选私有编译 Daed 核心、控制面板及中文包
         CONFIG_PACKAGE_daed=y
         CONFIG_PACKAGE_luci-app-daed=y
         CONFIG_PACKAGE_luci-i18n-daed-zh-cn=y
 
-        # 一并打入基础中文网页后台
+        # 强选基础 LuCI 网页后台及中文包
         CONFIG_PACKAGE_luci=y
         CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
         EOF
         make defconfig
+
+    - name: Verify Configuration Integrity (5-Min Early Warning)
+      run: |
+        # 【全网唯一安全保险】如果大件被系统偷偷剔除，在此处光速自杀熔断，绝不让你白等2.5小时！
+        echo "=== 正在启动『5分钟早启雷达』全面审计依赖平衡 ==="
+        ERR=0
+        grep -q "CONFIG_PACKAGE_luci-app-daed=y" .config && echo "✓ 成功：luci-app-daed 界面已锁死在最终编译清单中" || { echo "❌ 错误：luci-app-daed 界面被剔除！"; ERR=1; }
+        grep -q "CONFIG_PACKAGE_daed=y" .config && echo "✓ 成功：daed 核心二进制已锁死在最终编译清单中" || { echo "❌ 错误：daed 核心被剔除！"; ERR=1; }
+        grep -q "CONFIG_PACKAGE_kmod-xdp-sockets-diag=y" .config && echo "✓ 成功：kmod-xdp-sockets-diag 底层驱动已锁死" || { echo "❌ 错误：内核驱动依赖未满足！"; ERR=1; }
+        
+        if [ $ERR -eq 1 ]; then
+          echo "=== 依赖审计未通过，已为你光速熔断，绝不浪费时间！ ==="
+          exit 1
+        else
+          echo "=== 审计全线通过！大件全部锁死！请安心等待2.5小时后的完美大作 ==="
+        fi
 
     - name: Download package
       run: |
@@ -63,5 +119,5 @@ jobs:
     - name: Upload firmware to Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ImmortalWrt_AX6S_Daed_FullSource
+        name: ImmortalWrt_AX6S_Daed_Perfect_Final
         path: bin/targets/mediatek/mt7622/*-sysupgrade.itb

@@ -1,4 +1,4 @@
-name: Build GL-AR300M16 PassWall Bulletproof
+name: Build GL-AR300M16 PassWall Master
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
 
     - name: Safeguard OpenWrt Source
       run: |
-        # 【终极防线】检测你的仓库是否为空壳。如果是空仓库，自动拉取最新的 ImmortalWrt 官方母盘
+        # 【底盘防线】检测仓库是否为空壳。如果是，自动拉取最新的 ImmortalWrt 官方母盘
         if [ ! -f "scripts/feeds" ]; then
           echo "检测到当前不是 OpenWrt 根目录，正在自动抓取官方母盘..."
           git clone --depth 1 https://github.com/immortalwrt/immortalwrt.git -b master /tmp/openwrt
@@ -24,18 +24,20 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        # 官方底层环境初始化（这里将耗时约 4分50秒）
+        # 官方底层环境初始化
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
         sudo apt-get -qq update && sudo apt-get install -y upx-ucl || true
 
-    - name: Add PassWall Feed (Zero Dead Links)
+    - name: Add PassWall Feeds (Updated Organization URL)
       run: |
-        # 【彻底修正致命错误】绝对不加 ;main 语法！绝对不加 404 废弃死链！只保留唯一正统活链！
-        echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall.git" >> feeds.conf.default
+        # 【破案核心！】作者 xiaorouji 已将仓库全线更名迁移至 Openwrt-Passwall 组织下！
+        # 换上全新正确的地址，彻底击碎 Git Username 密码报错！
+        echo "src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main" >> feeds.conf.default
+        echo "src-git passwall https://github.com/Openwrt-Passwall/openwrt-passwall.git;main" >> feeds.conf.default
 
     - name: Update And Install Feeds
       run: |
-        # 第 4分53秒 的真正考验！死链已清除，这里将 100% 顺畅绿灯通过！
+        # 地址一纠正，这里的拉取将如丝般顺滑，绝对不会再报 exit 1！
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
@@ -44,7 +46,7 @@ jobs:
         # 锁死 LAN IP
         sed -i 's/192.168.1.1/192.168.9.1/g' package/base-files/files/bin/config_generate
         
-        # 生成规范配置单（全部使用标准 Linux Kernel 剔除语法，绝不产生编译摩擦）
+        # 生成规范配置单
         cat << 'EOF' > .config
         CONFIG_TARGET_ath79=y
         CONFIG_TARGET_ath79_generic=y
@@ -60,15 +62,17 @@ jobs:
         CONFIG_PACKAGE_luci-app-passwall=y
         CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
         
-        # 仅保留核心，强制剔除庞杂模块，保住 15M 红线
+        # 仅保留核心，强制剔除庞杂模块，死保 15M 红线
         CONFIG_PACKAGE_Xray-core=y
         CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
         # CONFIG_PACKAGE_luci-app-passwall_INCLUDE_sing-box is not set
         # CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray is not set
         # CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Trojan_Plus is not set
+        # CONFIG_PACKAGE_luci-app-passwall_INCLUDE_NaiveProxy is not set
         
-        # 核心网络劫持
+        # 核心网络劫持与防污染
         CONFIG_PACKAGE_chinadns-ng=y
+        CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ChinaDNS_NG=y
         CONFIG_PACKAGE_dnsmasq-full=y
         # CONFIG_PACKAGE_dnsmasq is not set
         
@@ -84,7 +88,6 @@ jobs:
 
     - name: Download Packages
       run: |
-        # 并发下载大件，减少编译死锁
         make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;

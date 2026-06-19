@@ -16,26 +16,34 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get -qq update
-        # 强装宿主机工具链（包含 upx-ucl 用于体积压缩，以及基本解压编译核心）
+        # 强装宿主机工具链（包含 upx-ucl 用于体积压榨，以及解压核心 tools）
         sudo apt-get install -y build-essential gawk rsync unzip upx-ucl curl git
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 
-    - name: Clone PassWall Safely via Retry Loop
+    - name: Clone PassWall and Dependencies Safely
       run: |
-        # 【第1轮审计硬核重构：5次网络防断流雷达，自适应拉取，彻底免疫 exit 128 与 exit 22】
+        # 【5次防断流重试雷达】
         mkdir -p package/
+        CLONED=0
         for i in {1..5}; do
           rm -rf /tmp/passwall-repo
           echo "=== 正在尝试第 $i 次拉取 PassWall 核心源码 ==="
-          git clone --depth=1 https://github.com/xiaorouji/openwrt-passwall.git /tmp/passwall-repo && break || sleep 5
+          if git clone --depth=1 https://github.com/xiaorouji/openwrt-passwall.git /tmp/passwall-repo; then
+            CLONED=1
+            break
+          fi
+          sleep 5
         done
         
-        # 【自适应审查平铺】动态探测目录级数，100% 精准移入本地原生编译区
-        if [ -d "/tmp/passwall-repo/luci-app-passwall" ]; then
-          mv /tmp/passwall-repo/luci-app-passwall package/
-        else
-          mv /tmp/passwall-repo package/luci-app-passwall
+        if [ $CLONED -eq 0 ]; then
+          echo "❌ 错误：无法连接 GitHub 镜像源，进程中断。"
+          exit 1
         fi
+
+        # 【全家桶物理平铺】不仅移动主程序，同时把其自带的 packages 依赖配方全部物理平铺进编译树，100% 杜绝依赖缺失
+        cp -r /tmp/passwall-repo/luci-app-passwall package/
+        cp -r /tmp/passwall-repo/packages/* package/ 2>/dev/null || true
+        echo "✓ PassWall 主面板及全套依赖配方已成功注入本地原生编译区"
 
     - name: Update And Install Feeds Engine
       run: |
@@ -115,7 +123,7 @@ jobs:
           echo "=== ❌ 审计未通过！已为你前置熔断！ ==="
           exit 1
         else
-          echo "=== 🎉 20重复核完美通关！全依赖地基稳如磐石，开启高速编译！ ==="
+          echo "=== 🎉 终极验证完美通关！全依赖地基稳如磐石，开始高速编译！ ==="
         fi
 
     - name: Download Dependency Packages

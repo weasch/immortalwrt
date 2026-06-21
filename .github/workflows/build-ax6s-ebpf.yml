@@ -41,13 +41,17 @@ jobs:
         CONFIG_PACKAGE_luci-compat=y
         
         # ==========================================
-        # 【核心黑科技：满血原生 eBPF 与 BTF 内核支持】
+        # 【终极破案：严格遵守 OpenWrt BTF 依赖链】
         # ==========================================
         CONFIG_DEVEL=y
-        # 【破案关键】必须开启 BPF 工具链总开关，否则后续 BTF 将被系统静默剔除！
-        CONFIG_BPF_TOOLCHAIN=y
+        CONFIG_TOOLCHAINOPTS=y
+        # 1. 强制开启宿主机 BPF 编译工具链 (pahole/dwarves)
+        CONFIG_BPF_TOOLCHAIN_HOST=y
+        CONFIG_DWARVES=y
         
         CONFIG_KERNEL_DEBUG_INFO=y
+        # 2. 强行关闭精简模式！(不加这句，BTF 必被剔除！)
+        # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
         CONFIG_KERNEL_DEBUG_INFO_BTF=y
         CONFIG_KERNEL_BPF_EVENTS=y
         CONFIG_KERNEL_CGROUP_BPF=y
@@ -75,16 +79,17 @@ jobs:
 
     - name: Early Warning Audit Radar
       run: |
-        # 【真·护城河雷达】这一次，总开关已开，BTF 绝不会再被剔除！
+        # 【全量依赖自检】
         ERR=0
         grep -q "CONFIG_TARGET_mediatek=y" .config && echo "✓ 底层架构锁定成功" || { echo "❌ 错误: 机型被重置！"; ERR=1; }
+        grep -q "CONFIG_BPF_TOOLCHAIN_HOST=y" .config && echo "✓ 宿主机 BPF 编译链就绪" || { echo "❌ 错误: 编译链断裂！"; ERR=1; }
         grep -q "CONFIG_KERNEL_DEBUG_INFO_BTF=y" .config && echo "✓ BTF eBPF 符号表锁定成功" || { echo "❌ 错误: eBPF 再次被剔除！"; ERR=1; }
         
         if [ $ERR -eq 1 ]; then
-          echo "=== ❌ 审计未通过！请检查日志。 ==="
+          echo "=== ❌ 审计未通过！依然存在依赖冲突，立刻前置熔断！ ==="
           exit 1
         else
-          echo "=== 🎉 BPF 工具链与 BTF 完美咬合！地基稳如磐石，开启高速编译！ ==="
+          echo "=== 🎉 所有死穴已被打破！BTF 依赖链完全贯通！开启高速编译！ ==="
         fi
 
     - name: Download Packages
@@ -107,7 +112,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_AX6S_Fork_Native_eBPF
-        # 【天罗地网】拦截 targets 目录下生成的所有 bin 和 itb 固件
         path: |
           bin/targets/**/*.bin
           bin/targets/**/*.itb

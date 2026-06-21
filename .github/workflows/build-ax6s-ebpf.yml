@@ -26,10 +26,8 @@ jobs:
 
     - name: Configure Network and Kernel for eBPF
       run: |
-        # 将默认后台 IP 修改为 192.168.9.1
         sed -i 's/192.168.1.1/192.168.9.1/g' package/base-files/files/bin/config_generate
         
-        # 写入定制配置单
         cat << 'EOF' > .config
         # 【机型锁定】红米 AX6S
         CONFIG_TARGET_mediatek=y
@@ -41,10 +39,14 @@ jobs:
         CONFIG_PACKAGE_luci-base=y
         CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
         CONFIG_PACKAGE_luci-compat=y
-        # CONFIG_LUCI_LANG_en is not set
         
+        # ==========================================
         # 【核心黑科技：满血原生 eBPF 与 BTF 内核支持】
+        # ==========================================
         CONFIG_DEVEL=y
+        # 【破案关键】必须开启 BPF 工具链总开关，否则后续 BTF 将被系统静默剔除！
+        CONFIG_BPF_TOOLCHAIN=y
+        
         CONFIG_KERNEL_DEBUG_INFO=y
         CONFIG_KERNEL_DEBUG_INFO_BTF=y
         CONFIG_KERNEL_BPF_EVENTS=y
@@ -66,25 +68,23 @@ jobs:
         CONFIG_PACKAGE_iptables-mod-tproxy=y
         CONFIG_PACKAGE_kmod-ipt-tproxy=y
         
-        # 开启 Strip 优化体积
         CONFIG_STRIP=y
         EOF
         
-        # 执行依赖链推导
         make defconfig
 
     - name: Early Warning Audit Radar
       run: |
-        # 【5分钟自检雷达】如果系统不认 AX6S 这个代号（导致回退为默认机型），立刻熔断自杀，绝不浪费 40 分钟
+        # 【真·护城河雷达】这一次，总开关已开，BTF 绝不会再被剔除！
         ERR=0
         grep -q "CONFIG_TARGET_mediatek=y" .config && echo "✓ 底层架构锁定成功" || { echo "❌ 错误: 机型被重置！"; ERR=1; }
-        grep -q "CONFIG_KERNEL_DEBUG_INFO_BTF=y" .config && echo "✓ BTF eBPF 支持锁定成功" || { echo "❌ 错误: eBPF 被剔除！"; ERR=1; }
+        grep -q "CONFIG_KERNEL_DEBUG_INFO_BTF=y" .config && echo "✓ BTF eBPF 符号表锁定成功" || { echo "❌ 错误: eBPF 再次被剔除！"; ERR=1; }
         
         if [ $ERR -eq 1 ]; then
-          echo "=== ❌ 审计未通过！说明你 Fork 的分支机型代号有变，已为你前置熔断！ ==="
+          echo "=== ❌ 审计未通过！请检查日志。 ==="
           exit 1
         else
-          echo "=== 🎉 机型与 eBPF 内核地基稳如磐石，开启高速编译！ ==="
+          echo "=== 🎉 BPF 工具链与 BTF 完美咬合！地基稳如磐石，开启高速编译！ ==="
         fi
 
     - name: Download Packages
@@ -96,12 +96,10 @@ jobs:
     - name: Compile Custom Firmware
       run: |
         echo -e "$(nproc) thread compile"
-        # 启动全速编译
         make -j$(nproc) || make -j1 V=s
 
     - name: Print Firmware Directory Structure
       run: |
-        # 【侦察兵】在上传前，打印所有的编译产物，让你清楚地看到固件被藏在了哪里！
         echo "=== 正在扫描生成的固件目录 ==="
         ls -lhR bin/targets/
 
@@ -109,7 +107,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_AX6S_Fork_Native_eBPF
-        # 【天罗地网】不要去猜路径和后缀，直接用双星号拦截 targets 目录下生成的所有 bin 和 itb 文件！
+        # 【天罗地网】拦截 targets 目录下生成的所有 bin 和 itb 固件
         path: |
           bin/targets/**/*.bin
           bin/targets/**/*.itb

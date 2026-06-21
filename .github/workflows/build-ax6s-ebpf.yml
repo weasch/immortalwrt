@@ -10,21 +10,17 @@ jobs:
     steps:
     - name: Checkout Your Forked Source
       uses: actions/checkout@v4
-      # 这里的 actions/checkout 会自动拉取你当前 Fork 的仓库代码，完全受你控制
 
     - name: Initialize Compilation Environment
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo apt-get -qq update
-        # 严格采用标准的工具链，gawk 修正已就位
         sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev file wget upx-ucl
-        # 调用 ImmortalWrt 官方环境自适应脚本补充缺失项
         sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)' || true
         
     - name: Update And Install Feeds
       run: |
-        # 直接使用你 Fork 仓库里的 feeds 配置进行更新
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
@@ -35,7 +31,7 @@ jobs:
         
         # 写入定制配置单
         cat << 'EOF' > .config
-        # 【机型锁定】红米 AX6S (MT7622)
+        # 【机型锁定】红米 AX6S
         CONFIG_TARGET_mediatek=y
         CONFIG_TARGET_mediatek_mt7622=y
         CONFIG_TARGET_mediatek_mt7622_DEVICE_xiaomi_redmi-router-ax6s=y
@@ -47,16 +43,12 @@ jobs:
         CONFIG_PACKAGE_luci-compat=y
         # CONFIG_LUCI_LANG_en is not set
         
-        # ==========================================
         # 【核心黑科技：满血原生 eBPF 与 BTF 内核支持】
-        # 打开开发者模式，允许向内核注入完整调试符号
-        # ==========================================
         CONFIG_DEVEL=y
         CONFIG_KERNEL_DEBUG_INFO=y
         CONFIG_KERNEL_DEBUG_INFO_BTF=y
         CONFIG_KERNEL_BPF_EVENTS=y
         CONFIG_KERNEL_CGROUP_BPF=y
-        # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
         
         # 【eBPF 流量拦截必需的底层内核模块】
         CONFIG_PACKAGE_kmod-bpf=y
@@ -74,18 +66,26 @@ jobs:
         CONFIG_PACKAGE_iptables-mod-tproxy=y
         CONFIG_PACKAGE_kmod-ipt-tproxy=y
         
-        # 【防反噬防线】显式声明不编译任何内置的 dae/daed 插件，杜绝编译系统偷偷打上魔改冲突补丁
-        # CONFIG_PACKAGE_luci-app-daed is not set
-        # CONFIG_PACKAGE_luci-app-dae is not set
-        # CONFIG_PACKAGE_daed is not set
-        # CONFIG_PACKAGE_dae is not set
-        
         # 开启 Strip 优化体积
         CONFIG_STRIP=y
         EOF
         
         # 执行依赖链推导
         make defconfig
+
+    - name: Early Warning Audit Radar
+      run: |
+        # 【5分钟自检雷达】如果系统不认 AX6S 这个代号（导致回退为默认机型），立刻熔断自杀，绝不浪费 40 分钟
+        ERR=0
+        grep -q "CONFIG_TARGET_mediatek=y" .config && echo "✓ 底层架构锁定成功" || { echo "❌ 错误: 机型被重置！"; ERR=1; }
+        grep -q "CONFIG_KERNEL_DEBUG_INFO_BTF=y" .config && echo "✓ BTF eBPF 支持锁定成功" || { echo "❌ 错误: eBPF 被剔除！"; ERR=1; }
+        
+        if [ $ERR -eq 1 ]; then
+          echo "=== ❌ 审计未通过！说明你 Fork 的分支机型代号有变，已为你前置熔断！ ==="
+          exit 1
+        else
+          echo "=== 🎉 机型与 eBPF 内核地基稳如磐石，开启高速编译！ ==="
+        fi
 
     - name: Download Packages
       run: |
@@ -99,8 +99,17 @@ jobs:
         # 启动全速编译
         make -j$(nproc) || make -j1 V=s
 
+    - name: Print Firmware Directory Structure
+      run: |
+        # 【侦察兵】在上传前，打印所有的编译产物，让你清楚地看到固件被藏在了哪里！
+        echo "=== 正在扫描生成的固件目录 ==="
+        ls -lhR bin/targets/
+
     - name: Upload Finished Firmware
       uses: actions/upload-artifact@v4
       with:
         name: ImmortalWrt_AX6S_Fork_Native_eBPF
-        path: bin/targets/mediatek/mt7622/*-sysupgrade.bin
+        # 【天罗地网】不要去猜路径和后缀，直接用双星号拦截 targets 目录下生成的所有 bin 和 itb 文件！
+        path: |
+          bin/targets/**/*.bin
+          bin/targets/**/*.itb
